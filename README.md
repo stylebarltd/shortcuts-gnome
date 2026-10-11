@@ -6,6 +6,8 @@ A top-bar board with your 20 most visited websites, 15 most used apps and 10 mos
 - **Apps** use the ranking GNOME keeps for its *Frequent* apps view; a click focuses an app that is already open.
 - **Folders** are ranked from GTK's recent files (what apps opened or saved, grouped by folder) plus the folders bookmarked in Files.
 
+Hover a tile and click its × to remove it for good; the next one in the ranking moves up. Removed tiles are kept in `~/.config/shortcuts-gnome/removed.json`, and *Restore removed tiles* brings them all back.
+
 History is re-read when the menu opens and the ranking is older than an hour, or with *Refresh from history*. All of it stays on your computer: the ranking is cached in `~/.cache/shortcuts-gnome/`.
 
 Optional `~/.config/shortcuts-gnome/config.json`:

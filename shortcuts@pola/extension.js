@@ -11,6 +11,7 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 const CONFIG_PATH = GLib.build_filenamev([GLib.get_user_config_dir(), 'shortcuts-gnome', 'config.json']);
+const REMOVED_PATH = GLib.build_filenamev([GLib.get_user_config_dir(), 'shortcuts-gnome', 'removed.json']);
 const CACHE_PATH = GLib.build_filenamev([GLib.get_user_cache_dir(), 'shortcuts-gnome', 'top.json']);
 const DEFAULTS = {
     sites: 20,               // how many tiles per section
@@ -67,11 +68,19 @@ class Indicator extends PanelMenu.Button {
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._refreshItem = new PopupMenu.PopupMenuItem('Refresh from history');
         this.menu.addMenuItem(this._refreshItem);
+        this._restoreItem = new PopupMenu.PopupMenuItem('Restore removed tiles');
+        this.menu.addMenuItem(this._restoreItem);
     }
 
     onOpen(cb) { this.menu.connect('open-state-changed', (_m, open) => { if (open) cb(); }); }
     onRefresh(cb) { this._refreshItem.connect('activate', cb); }
     setRefreshText(text) { this._refreshItem.label.set_text(text); }
+    onRemove(cb) { this._removeCb = cb; }
+    onRestore(cb) { this._restoreItem.connect('activate', cb); }
+    setRemovedCount(n) {
+        this._restoreItem.visible = n > 0;
+        this._restoreItem.label.set_text(`Restore removed tiles (${n})`);
+    }
 
     render(sections, columns) {
         this._grid.destroy_all_children();
@@ -127,7 +136,22 @@ class Indicator extends PanelMenu.Button {
                 Main.notifyError('Shortcuts', `Could not open ${it.uri}: ${e.message}`);
             }
         });
-        return btn;
+
+        // × in the corner while hovered: removes the tile for good, the next one moves up
+        const remove = new St.Button({
+            child: new St.Icon({icon_name: 'window-close-symbolic', icon_size: 10}),
+            style_class: 'shortcuts-remove', opacity: 0, can_focus: false, track_hover: true,
+            x_align: Clutter.ActorAlign.END, y_align: Clutter.ActorAlign.START, x_expand: true, y_expand: true,
+        });
+        remove.connect('clicked', () => {
+            // re-render from an idle: this button is destroyed by it
+            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => { this._removeCb?.(it.key); return GLib.SOURCE_REMOVE; });
+        });
+        const tile = new St.Widget({layout_manager: new Clutter.BinLayout(), reactive: true, track_hover: true});
+        tile.add_child(btn);
+        tile.add_child(remove);
+        tile.connect('notify::hover', () => remove.ease({opacity: tile.hover ? 255 : 0, duration: 120}));
+        return tile;
     }
 });
 
@@ -138,6 +162,9 @@ export default class ShortcutsExtension extends Extension {
         this._indicator = new Indicator();
         this._indicator.onOpen(() => this._maybeRefresh());
         this._indicator.onRefresh(() => this._collect());
+        this._indicator.onRemove(key => this._remove(key));
+        this._indicator.onRestore(() => this._setRemoved([]));
+        this._removed = readJson(REMOVED_PATH) ?? [];
         Main.panel.addToStatusArea(this.uuid, this._indicator);
         this._data = readJson(CACHE_PATH);
         this._render();
@@ -150,10 +177,25 @@ export default class ShortcutsExtension extends Extension {
         this._indicator?.destroy();
         this._indicator = null;
         this._data = null;
+        this._removed = null;
+    }
+
+    _remove(key) {
+        if (key && !this._removed.includes(key)) this._setRemoved([...this._removed, key]);
+    }
+
+    _setRemoved(list) {
+        this._removed = list;
+        try {
+            GLib.mkdir_with_parents(GLib.path_get_dirname(REMOVED_PATH), 0o755);
+            GLib.file_set_contents(REMOVED_PATH, JSON.stringify(list, null, 1));
+        } catch (e) { console.error(`shortcuts: ${e.message}`); }
+        this._render();
+        this._maybeRefresh();   // the cached ranking may run out of entries to move up
     }
 
     // ask for a few more than shown so hidden entries can be skipped
-    _wanted() { return Math.max(this._cfg.sites, this._cfg.folders) + this._cfg.hide.length + 5; }
+    _wanted() { return Math.max(this._cfg.sites, this._cfg.folders) + this._cfg.hide.length + this._removed.length + 5; }
 
     _maybeRefresh() {
         const age = Date.now() / 1000 - (this._data?.updated ?? 0);
@@ -189,16 +231,17 @@ export default class ShortcutsExtension extends Extension {
     _render() {
         if (!this._indicator) return;
         const {hide, pin, columns} = this._cfg;
-        const hidden = new Set(hide.map(h => h.replace(/^~/, home)));
+        const hidden = new Set([...hide, ...this._removed].map(h => h.replace(/^~/, home)));
+        this._indicator.setRemovedCount(this._removed.length);
         const pinnedSites = pin.filter(p => /^https?:/.test(p)).map(url => {
             const host = GLib.Uri.parse(url, GLib.UriFlags.NONE).get_host().replace(/^www\./, '');
-            return {title: host, sub: host, uri: url};
-        });
-        const pinnedPlaces = pin.filter(p => !/^https?:/.test(p)).map(p => p.replace(/^~/, home));
+            return {title: host, sub: host, uri: url, key: host};
+        }).filter(p => !hidden.has(p.key));
+        const pinnedPlaces = pin.filter(p => !/^https?:/.test(p)).map(p => p.replace(/^~/, home)).filter(p => !hidden.has(p));
         const sites = [...pinnedSites, ...(this._data?.sites ?? [])
             .filter(s => !hidden.has(s.host) && !pinnedSites.some(p => p.sub === s.host))
             .map(s => ({
-                title: s.title, sub: s.host, uri: s.url,
+                title: s.title, sub: s.host, uri: s.url, key: s.host,
                 gicon: s.icon && GLib.file_test(s.icon, GLib.FileTest.EXISTS)
                     ? new Gio.FileIcon({file: Gio.File.new_for_path(s.icon)}) : null,
             }))].slice(0, this._cfg.sites);
@@ -208,13 +251,13 @@ export default class ShortcutsExtension extends Extension {
             .slice(0, this._cfg.folders)
             .map(p => ({
                 title: GLib.path_get_basename(p), sub: tildify(GLib.path_get_dirname(p)),
-                uri: Gio.File.new_for_path(p).get_uri(), gicon: folderIcon(p),
+                uri: Gio.File.new_for_path(p).get_uri(), gicon: folderIcon(p), key: p,
             }));
         // the same usage ranking GNOME keeps for its "Frequent" apps view
         const apps = Shell.AppUsage.get_default().get_most_used()
             .filter(app => !hidden.has(app.get_id()) && app.get_app_info()?.should_show() !== false)
             .slice(0, this._cfg.apps)
-            .map(app => ({title: app.get_name(), sub: '', gicon: app.get_icon(), app}));
+            .map(app => ({title: app.get_name(), sub: '', gicon: app.get_icon(), app, key: app.get_id()}));
         this._indicator.render([
             {title: 'Websites', items: sites},
             {title: 'Apps', items: apps},
