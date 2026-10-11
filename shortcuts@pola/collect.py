@@ -205,4 +205,4 @@ def top_places(n, now):
 if __name__ == '__main__':
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     now = time.time()
-    print(json.dumps({'sites': top_sites(n, now), 'places': top_places(n, now), 'updated': int(now)}))
+    print(json.dumps({'sites': top_sites(n, now), 'places': top_places(n, now), 'updated': int(now), 'n': n}))

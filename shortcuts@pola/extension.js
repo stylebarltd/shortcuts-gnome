@@ -152,9 +152,13 @@ export default class ShortcutsExtension extends Extension {
         this._data = null;
     }
 
+    // ask for a few more than shown so hidden entries can be skipped
+    _wanted() { return Math.max(this._cfg.sites, this._cfg.folders) + this._cfg.hide.length + 5; }
+
     _maybeRefresh() {
         const age = Date.now() / 1000 - (this._data?.updated ?? 0);
-        if (age > this._cfg.refreshMinutes * 60) this._collect();
+        // also when the board grew beyond what the cached ranking holds
+        if (age > this._cfg.refreshMinutes * 60 || (this._data?.n ?? 0) < this._wanted()) this._collect();
     }
 
     async _collect() {
@@ -163,9 +167,7 @@ export default class ShortcutsExtension extends Extension {
         this._indicator?.setRefreshText('Reading history…');
         try {
             const proc = new Gio.Subprocess({
-                // ask for a few more than shown so hidden entries can be skipped
-                argv: ['python3', GLib.build_filenamev([this.path, 'collect.py']),
-                    String(Math.max(this._cfg.sites, this._cfg.folders) + this._cfg.hide.length + 5)],
+                argv: ['python3', GLib.build_filenamev([this.path, 'collect.py']), String(this._wanted())],
                 flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE,
             });
             proc.init(null);
