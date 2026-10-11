@@ -29,10 +29,21 @@ ICONS = os.path.join(CACHE, 'icons')
 DAYS = 90
 HALF_LIFE = 14 * 86400          # a visit two weeks ago counts half
 SKIP_HOSTS = {'localhost', '127.0.0.1', '0.0.0.0', 'newtab', ''}
-CHROMIUM = ['google-chrome', 'google-chrome-beta', 'chromium', 'BraveSoftware/Brave-Browser',
-            'microsoft-edge', 'vivaldi', 'opera']
-FIREFOX = ['.mozilla/firefox', 'snap/firefox/common/.mozilla/firefox',
-           '.var/app/org.mozilla.firefox/.mozilla/firefox']
+# profile base -> desktop files that open that browser (first installed one wins)
+CHROMIUM = {
+    'google-chrome': ['google-chrome.desktop'],
+    'google-chrome-beta': ['google-chrome-beta.desktop'],
+    'chromium': ['chromium.desktop', 'chromium_chromium.desktop', 'chromium-browser.desktop'],
+    'BraveSoftware/Brave-Browser': ['brave-browser.desktop', 'com.brave.Browser.desktop'],
+    'microsoft-edge': ['microsoft-edge.desktop'],
+    'vivaldi': ['vivaldi-stable.desktop'],
+    'opera': ['opera.desktop'],
+}
+FIREFOX = {
+    '.mozilla/firefox': ['firefox.desktop', 'firefox-esr.desktop'],
+    'snap/firefox/common/.mozilla/firefox': ['firefox_firefox.desktop'],
+    '.var/app/org.mozilla.firefox/.mozilla/firefox': ['org.mozilla.firefox.desktop'],
+}
 
 
 def weight(age):
@@ -68,7 +79,7 @@ def host_of(url):
 
 
 def chromium_visits(now):
-    for name in CHROMIUM:
+    for name, apps in CHROMIUM.items():
         for hist in glob.glob(os.path.join(HOME, '.config', name, '*', 'History')):
             # Chromium time: microseconds since 1601-01-01
             since = int((now - DAYS * 86400 + 11644473600) * 1e6)
@@ -78,11 +89,11 @@ def chromium_visits(now):
             except sqlite3.Error:
                 continue
             for url, title, t in rows:
-                yield url, title, t / 1e6 - 11644473600, ('chromium', os.path.dirname(hist))
+                yield url, title, t / 1e6 - 11644473600, ('chromium', os.path.dirname(hist), tuple(apps))
 
 
 def firefox_visits(now):
-    for base in FIREFOX:
+    for base, apps in FIREFOX.items():
         for places in glob.glob(os.path.join(HOME, base, '*', 'places.sqlite')):
             try:
                 rows = query(places, 'SELECT p.url, p.title, v.visit_date FROM moz_historyvisits v '
@@ -91,12 +102,12 @@ def firefox_visits(now):
             except sqlite3.Error:
                 continue
             for url, title, t in rows:
-                yield url, title, t / 1e6, ('firefox', os.path.dirname(places))
+                yield url, title, t / 1e6, ('firefox', os.path.dirname(places), tuple(apps))
 
 
 def favicon(profile, host):
     """Save the browser's own favicon for the host (no network); returns the path or None."""
-    kind, path = profile
+    kind, path, _apps = profile
     out = os.path.join(ICONS, hashlib.sha1(host.encode()).hexdigest()[:16] + '.png')
     try:
         if kind == 'chromium':
@@ -137,6 +148,7 @@ def top_sites(n, now):
     titles = defaultdict(lambda: defaultdict(float))
     scheme = {}
     profile = {}
+    by_profile = defaultdict(lambda: defaultdict(float))   # host -> profile -> score
     for source in (chromium_visits(now), firefox_visits(now)):
         for url, title, t, prof in source:
             host, sch = host_of(url)
@@ -146,14 +158,19 @@ def top_sites(n, now):
             score[host] += w
             count[host] += 1
             scheme.setdefault(host, sch)
-            profile.setdefault(host, prof)
+            by_profile[host][prof] += w
             # only the front page's title names the site; deeper pages name the page
             if title and urllib.parse.urlsplit(url).path in ('', '/'):
                 titles[host][title] += w
     os.makedirs(ICONS, exist_ok=True)
     sites = []
     for host in sorted(score, key=score.get, reverse=True)[:n]:
+        # open the site in the browser (and Chromium profile) it is mostly visited with
+        kind, path, apps = prof = max(by_profile[host], key=by_profile[host].get)
+        profile[host] = prof
         sites.append({
+            'browser': list(apps),
+            'profile': os.path.basename(path) if kind == 'chromium' else None,
             'host': host,
             'url': f'{scheme[host]}://{host}/',
             'title': site_name(host, titles[host]),

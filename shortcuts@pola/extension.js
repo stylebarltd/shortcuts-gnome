@@ -53,6 +53,24 @@ const folderIcon = path => {
     }
 };
 
+// Open a site in the browser it is mostly visited with (and its Chromium profile);
+// the default browser when that one is gone or the site has no history.
+const openUri = (it, ctx) => {
+    const app = (it.browser ?? []).map(id => Gio.DesktopAppInfo.new(id)).find(Boolean);
+    if (app) {
+        if (it.profile && it.profile !== 'Default') {
+            const profiled = Gio.AppInfo.create_from_commandline(
+                `${app.get_executable()} --profile-directory=${GLib.shell_quote(it.profile)} %U`,
+                app.get_name(), Gio.AppInfoCreateFlags.SUPPORTS_URIS);
+            profiled.launch_uris([it.uri], ctx);
+        } else {
+            app.launch_uris([it.uri], ctx);
+        }
+        return;
+    }
+    Gio.AppInfo.launch_default_for_uri(it.uri, ctx);
+};
+
 const Indicator = GObject.registerClass(
 class Indicator extends PanelMenu.Button {
     _init() {
@@ -142,7 +160,7 @@ class Indicator extends PanelMenu.Button {
                 return;
             }
             try {
-                Gio.AppInfo.launch_default_for_uri(it.uri, global.create_app_launch_context(0, -1));
+                openUri(it, global.create_app_launch_context(0, -1));
             } catch (e) {
                 Main.notifyError('Shortcuts', `Could not open ${it.uri}: ${e.message}`);
             }
@@ -403,6 +421,7 @@ export default class ShortcutsExtension extends Extension {
             const h = history.get(host);
             return {
                 title: h?.title ?? host, sub: host, uri: url, key: host, pinValue: url,
+                browser: h?.browser, profile: h?.profile,
                 gicon: h?.icon && GLib.file_test(h.icon, GLib.FileTest.EXISTS)
                     ? new Gio.FileIcon({file: Gio.File.new_for_path(h.icon)}) : null,
             };

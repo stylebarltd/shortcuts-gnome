@@ -2,7 +2,7 @@
 
 A top-bar board with your 18 most visited websites, 12 most used apps, 6 last used documents and 12 most used folders, six to a row, one click each.
 
-- **Websites** are ranked from browser history of the last 90 days, grouped by site and weighted towards recent visits (a visit two weeks ago counts half). Reads every Chromium-family profile (Brave, Chrome, Chromium, Edge, Vivaldi, Opera) and Firefox (also snap and flatpak). Icons are the favicons your browser already stored; nothing is fetched from the network.
+- **Websites** are ranked from browser history of the last 90 days, grouped by site and weighted towards recent visits (a visit two weeks ago counts half). Reads every Chromium-family profile (Brave, Chrome, Chromium, Edge, Vivaldi, Opera) and Firefox (also snap and flatpak). Icons are the favicons your browser already stored; nothing is fetched from the network. A site opens in the browser (and Chromium profile) you mostly visit it with.
 - **Apps** use the ranking GNOME keeps for its *Frequent* apps view; a click focuses an app that is already open.
 - **Documents** are the last used PDFs, office and text files from GTK's recent files (dotfiles left out).
 - **Folders** are ranked from GTK's recent files (what apps opened or saved, grouped by folder) plus the folders bookmarked in Files.
