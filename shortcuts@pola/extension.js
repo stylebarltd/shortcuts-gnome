@@ -13,9 +13,9 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 const CONFIG_PATH = GLib.build_filenamev([GLib.get_user_config_dir(), 'shortcuts-gnome', 'config.json']);
 const CACHE_PATH = GLib.build_filenamev([GLib.get_user_cache_dir(), 'shortcuts-gnome', 'top.json']);
 const DEFAULTS = {
-    sites: 15,               // how many tiles per section
-    apps: 10,
-    folders: 5,
+    sites: 20,               // how many tiles per section
+    apps: 15,
+    folders: 10,
     columns: 5,
     refreshMinutes: 60,      // re-rank history at most this often (checked when the menu opens)
     hide: [],                // hosts ("facebook.com") or folder paths to leave out
