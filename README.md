@@ -1,6 +1,6 @@
 # Shortcuts (GNOME Shell extension)
 
-A top-bar board with your 15 most visited websites, 5 most used apps and 5 most used folders, one click each.
+A top-bar board with your 15 most visited websites, 10 most used apps and 5 most used folders, one click each.
 
 - **Websites** are ranked from browser history of the last 90 days, grouped by site and weighted towards recent visits (a visit two weeks ago counts half). Reads every Chromium-family profile (Brave, Chrome, Chromium, Edge, Vivaldi, Opera) and Firefox (also snap and flatpak). Icons are the favicons your browser already stored; nothing is fetched from the network.
 - **Apps** use the ranking GNOME keeps for its *Frequent* apps view; a click focuses an app that is already open.
@@ -11,7 +11,7 @@ History is re-read when the menu opens and the ranking is older than an hour, or
 Optional `~/.config/shortcuts-gnome/config.json`:
 
 ```json
-{"sites": 15, "apps": 5, "folders": 5, "columns": 5, "refreshMinutes": 60,
+{"sites": 15, "apps": 10, "folders": 5, "columns": 5, "refreshMinutes": 60,
  "hide": ["facebook.com", "~/Downloads"],
  "pin": ["https://github.com", "~/Development"]}
 ```

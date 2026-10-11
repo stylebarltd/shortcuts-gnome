@@ -14,7 +14,7 @@ const CONFIG_PATH = GLib.build_filenamev([GLib.get_user_config_dir(), 'shortcuts
 const CACHE_PATH = GLib.build_filenamev([GLib.get_user_cache_dir(), 'shortcuts-gnome', 'top.json']);
 const DEFAULTS = {
     sites: 15,               // how many tiles per section
-    apps: 5,
+    apps: 10,
     folders: 5,
     columns: 5,
     refreshMinutes: 60,      // re-rank history at most this often (checked when the menu opens)
