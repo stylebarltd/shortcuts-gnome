@@ -1,0 +1,24 @@
+.shortcuts-board { spacing: 6px; padding: 4px 2px; }
+.shortcuts-heading { font-weight: bold; color: #aaa; font-size: 0.9em; margin: 6px 4px 2px; }
+.shortcuts-row { spacing: 6px; }
+.shortcuts-tile { border-radius: 10px; padding: 10px 6px 8px; background-color: rgba(255, 255, 255, 0.04); }
+.shortcuts-tile:hover, .shortcuts-tile:focus { background-color: rgba(255, 255, 255, 0.12); }
+.shortcuts-tile:active { background-color: rgba(255, 255, 255, 0.2); }
+.shortcuts-tile StBoxLayout { spacing: 4px; }
+.shortcuts-name { font-weight: bold; font-size: 0.9em; }
+.shortcuts-sub { color: #999; font-size: 0.75em; }
+.shortcuts-badge { width: 28px; height: 28px; border-radius: 8px; color: white; font-weight: bold; text-align: center; padding-top: 4px; }
+/* faint pill so neighbouring top-bar items read as separate groups */
+.shortcuts-chip { background-color: rgba(255, 255, 255, 0.07); border-radius: 8px; padding: 0 8px; margin: 4px 0; }
+/* the theme's own hover/open highlight is a full-height pill on the button; drop it
+   and shade the chip instead so the shape stays the same */
+#panel .panel-button.shortcuts-button,
+#panel .panel-button.shortcuts-button:hover,
+#panel .panel-button.shortcuts-button:focus,
+#panel .panel-button.shortcuts-button:active,
+#panel .panel-button.shortcuts-button:checked { box-shadow: none; background-color: transparent; }
+#panel .shortcuts-button:hover .shortcuts-chip,
+#panel .shortcuts-button:focus .shortcuts-chip { background-color: rgba(255, 255, 255, 0.17); }
+#panel .shortcuts-button:active .shortcuts-chip,
+#panel .shortcuts-button:checked .shortcuts-chip { background-color: rgba(255, 255, 255, 0.28); }
+#panel .shortcuts-button:checked:hover .shortcuts-chip { background-color: rgba(255, 255, 255, 0.32); }
