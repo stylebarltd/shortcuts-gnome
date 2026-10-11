@@ -11,7 +11,10 @@ const isUrl = s => /^https?:\/\//.test(s);
 // Removed entries are hosts, app ids or folder paths; show each the way the board does.
 const describe = key => {
     if (key.startsWith('/') || key.startsWith('~'))
-        return {title: GLib.path_get_basename(key), subtitle: tildify(key), icon: 'folder-symbolic'};
+        return {
+            title: GLib.path_get_basename(key), subtitle: tildify(key),
+            icon: GLib.file_test(key.replace(/^~/, home), GLib.FileTest.IS_DIR) ? 'folder-symbolic' : 'text-x-generic-symbolic',
+        };
     if (key.endsWith('.desktop')) {
         const app = Gio.DesktopAppInfo.new(key);
         return {title: app?.get_name() ?? key, subtitle: 'App', icon: 'application-x-executable-symbolic'};
@@ -41,6 +44,7 @@ export default class ShortcutsPreferences extends ExtensionPreferences {
         for (const [key, title, subtitle] of [
             ['sites', 'Websites', 'Most visited, from browser history'],
             ['apps', 'Apps', 'Most used, as in GNOME’s Frequent view'],
+            ['documents', 'Documents', 'Last used PDFs, office and text files'],
             ['folders', 'Folders', 'Most used, from recent files and Files bookmarks'],
             ['columns', 'Tiles per row', null],
         ]) {

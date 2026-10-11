@@ -2,22 +2,27 @@
 <schemalist>
   <schema id="org.gnome.shell.extensions.shortcuts" path="/org/gnome/shell/extensions/shortcuts/">
     <key name="sites" type="i">
-      <default>20</default>
+      <default>18</default>
       <range min="0" max="60"/>
       <summary>Number of website tiles</summary>
     </key>
     <key name="apps" type="i">
-      <default>15</default>
+      <default>12</default>
       <range min="0" max="60"/>
       <summary>Number of app tiles</summary>
     </key>
+    <key name="documents" type="i">
+      <default>6</default>
+      <range min="0" max="60"/>
+      <summary>Number of recent document tiles</summary>
+    </key>
     <key name="folders" type="i">
-      <default>10</default>
+      <default>12</default>
       <range min="0" max="60"/>
       <summary>Number of folder tiles</summary>
     </key>
     <key name="columns" type="i">
-      <default>5</default>
+      <default>6</default>
       <range min="2" max="10"/>
       <summary>Tiles per row</summary>
     </key>

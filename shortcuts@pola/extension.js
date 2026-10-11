@@ -39,7 +39,8 @@ const DRAG_THRESHOLD = 8;
 // host, app id or path. kind() says which board section an entry belongs to.
 const isUrl = v => /^https?:\/\//.test(v);
 const hostOf = url => (GLib.Uri.parse(url, GLib.UriFlags.NONE).get_host() ?? '').replace(/^www\./, '');
-const kind = v => isUrl(v) ? 'sites' : v.endsWith('.desktop') ? 'apps' : 'folders';
+const kind = v => isUrl(v) ? 'sites' : v.endsWith('.desktop') ? 'apps'
+    : GLib.file_test(v.replace(/^~/, home), GLib.FileTest.IS_DIR) ? 'folders' : 'documents';
 const pinKey = v => kind(v) === 'sites' ? hostOf(v) : kind(v) === 'apps' ? v : v.replace(/^~/, home);
 
 // Folder icon as Files shows it (Downloads, Pictures, … get their own).
@@ -341,7 +342,7 @@ export default class ShortcutsExtension extends Extension {
     get _cfg() {
         const s = this._settings;
         return {
-            sites: s.get_int('sites'), apps: s.get_int('apps'), folders: s.get_int('folders'),
+            sites: s.get_int('sites'), apps: s.get_int('apps'), folders: s.get_int('folders'), documents: s.get_int('documents'),
             columns: s.get_int('columns'), refreshMinutes: s.get_int('refresh-minutes'),
             pin: s.get_strv('pinned'), hide: s.get_strv('hidden'),
         };
@@ -350,13 +351,14 @@ export default class ShortcutsExtension extends Extension {
     // ask for a few more than shown so hidden entries can be skipped
     _wanted() {
         const cfg = this._cfg;
-        return Math.max(cfg.sites, cfg.folders) + cfg.hide.length + 5;
+        return Math.max(cfg.sites, cfg.folders, cfg.documents) + cfg.hide.length + 5;
     }
 
     _maybeRefresh() {
         const age = Date.now() / 1000 - (this._data?.updated ?? 0);
         // also when the board grew beyond what the cached ranking holds
-        if (age > this._cfg.refreshMinutes * 60 || (this._data?.n ?? 0) < this._wanted()) this._collect();
+        if (age > this._cfg.refreshMinutes * 60 || (this._data?.n ?? 0) < this._wanted() ||
+            !this._data?.documents) this._collect();   // caches from before the documents row
     }
 
     async _collect() {
@@ -429,9 +431,29 @@ export default class ShortcutsExtension extends Extension {
             (this._data?.places ?? []).map(p => p.path).filter(isDir).map(folder),
             cfg.folders);
 
+        // recent documents, newest first; the icon follows the file type
+        const doc = p => {
+            let gicon;
+            try {
+                gicon = Gio.File.new_for_path(p).query_info('standard::icon', Gio.FileQueryInfoFlags.NONE, null).get_icon();
+            } catch (_e) {
+                gicon = new Gio.ThemedIcon({name: 'text-x-generic'});
+            }
+            return {
+                title: GLib.path_get_basename(p), sub: tildify(GLib.path_get_dirname(p)),
+                uri: Gio.File.new_for_path(p).get_uri(), gicon, key: p, pinValue: tildify(p),
+            };
+        };
+        const isFile = p => GLib.file_test(p, GLib.FileTest.IS_REGULAR);
+        const documents = fill(
+            liked('documents').map(pinKey).filter(isFile).map(doc),
+            (this._data?.documents ?? []).map(d => d.path).filter(isFile).map(doc),
+            cfg.documents);
+
         this._indicator.render([
             {title: 'Websites', items: sites},
             {title: 'Apps', items: apps},
+            {title: 'Documents', items: documents},
             {title: 'Folders', items: places},
         ], cfg.columns);
     }

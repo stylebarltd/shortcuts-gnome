@@ -4,7 +4,8 @@
 Websites: visits from every Chromium-family profile (Brave, Chrome, Chromium, Edge, Vivaldi)
 and Firefox (incl. snap/flatpak), last 90 days, grouped by host and weighted towards recent
 use. Folders: GTK recent files (what apps opened or saved) and Files bookmarks, grouped by
-the folder they live in. Prints JSON {"sites": [...], "places": [...]}; favicons are written
+the folder they live in. Documents: the most recently used document files (PDF, office,
+text) from the same list. Prints JSON {"sites": [...], "places": [...], "documents": [...]}; favicons are written
 to ~/.cache/shortcuts-gnome/icons.
 """
 import glob
@@ -202,7 +203,38 @@ def top_places(n, now):
             for p in sorted(score, key=score.get, reverse=True)[:n]]
 
 
+DOC_TYPES = ('application/pdf', 'application/rtf', 'application/epub+zip', 'application/msword',
+             'application/vnd.ms-', 'application/vnd.openxmlformats-officedocument.',
+             'application/vnd.oasis.opendocument.', 'text/plain', 'text/markdown', 'text/csv')
+MIME = '{http://www.freedesktop.org/standards/shared-mime-info}mime-type'
+
+
+def recent_documents(n):
+    """Last used documents, newest first; images, videos and code are left to the folders."""
+    try:
+        root = ET.parse(os.path.join(HOME, '.local/share/recently-used.xbel')).getroot()
+    except (OSError, ET.ParseError):
+        return []
+    docs = {}
+    for bm in root.iter('bookmark'):
+        href = bm.get('href', '')
+        mime = bm.find('.//' + MIME)
+        mime = mime.get('type', '') if mime is not None else ''
+        if not href.startswith('file://') or not mime.startswith(DOC_TYPES):
+            continue
+        path = urllib.parse.unquote(urllib.parse.urlsplit(href).path)
+        # dotfiles (.env, …) and anything in hidden folders are config, not documents
+        if not os.path.isfile(path) or '/.' in path:
+            continue
+        stamp = max(bm.get('modified') or '', bm.get('visited') or '', bm.get('added') or '')
+        if stamp > docs.get(path, ('',))[0]:
+            docs[path] = (stamp, mime)
+    newest = sorted(docs, key=lambda p: docs[p][0], reverse=True)[:n]
+    return [{'path': p, 'name': os.path.basename(p), 'mime': docs[p][1]} for p in newest]
+
+
 if __name__ == '__main__':
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     now = time.time()
-    print(json.dumps({'sites': top_sites(n, now), 'places': top_places(n, now), 'updated': int(now), 'n': n}))
+    print(json.dumps({'sites': top_sites(n, now), 'places': top_places(n, now),
+                      'documents': recent_documents(n), 'updated': int(now), 'n': n}))
