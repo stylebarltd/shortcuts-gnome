@@ -69,10 +69,13 @@ export default class ShortcutsPreferences extends ExtensionPreferences {
     }
 
     _listsPage(window, settings) {
-        const page = new Adw.PreferencesPage({title: 'Pinned & Removed', icon_name: 'view-pin-symbolic'});
+        const page = new Adw.PreferencesPage({title: 'Liked & Removed', icon_name: 'emblem-favorite-symbolic'});
 
-        // --- pinned
-        const pinned = new Adw.PreferencesGroup({title: 'Pinned', description: 'Always shown first in their section.'});
+        // --- liked (the 'pinned' key)
+        const pinned = new Adw.PreferencesGroup({
+            title: 'Liked',
+            description: 'Liked with the \u2665 on a tile, or added here. Shown first in their section, in this order; drag tiles on the board to sort them.',
+        });
         const add = new Adw.EntryRow({title: 'Add a website (https://…) or folder path', show_apply_button: true});
         const pin = value => {
             value = value.trim();
@@ -115,12 +118,12 @@ export default class ShortcutsPreferences extends ExtensionPreferences {
             const push = (group, row) => { group.add(row); rows.push([group, row]); };
 
             for (const value of settings.get_strv('pinned')) {
-                const row = new Adw.ActionRow({
-                    title: isUrl(value) ? GLib.Uri.parse(value, GLib.UriFlags.NONE).get_host() : GLib.path_get_basename(value),
-                    subtitle: isUrl(value) ? value : tildify(value.replace(/^~/, home)),
-                });
-                row.add_prefix(new Gtk.Image({icon_name: isUrl(value) ? 'web-browser-symbolic' : 'folder-symbolic'}));
-                row.add_suffix(iconButton('user-trash-symbolic', 'Unpin', () =>
+                const {title, subtitle, icon} = isUrl(value)
+                    ? {title: GLib.Uri.parse(value, GLib.UriFlags.NONE).get_host(), subtitle: value, icon: 'web-browser-symbolic'}
+                    : describe(value.replace(/^~/, home));
+                const row = new Adw.ActionRow({title, subtitle});
+                row.add_prefix(new Gtk.Image({icon_name: icon}));
+                row.add_suffix(iconButton('user-trash-symbolic', 'Unlike', () =>
                     settings.set_strv('pinned', settings.get_strv('pinned').filter(v => v !== value))));
                 push(pinned, row);
             }

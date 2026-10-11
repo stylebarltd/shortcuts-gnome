@@ -33,6 +33,14 @@ const readJson = path => {
 
 const home = GLib.get_home_dir();
 const tildify = p => p.startsWith(home) ? `~${p.slice(home.length)}` : p;
+const DRAG_THRESHOLD = 8;
+
+// Liked entries ('pinned' setting) are URLs, app ids or folder paths; tiles are keyed by
+// host, app id or path. kind() says which board section an entry belongs to.
+const isUrl = v => /^https?:\/\//.test(v);
+const hostOf = url => (GLib.Uri.parse(url, GLib.UriFlags.NONE).get_host() ?? '').replace(/^www\./, '');
+const kind = v => isUrl(v) ? 'sites' : v.endsWith('.desktop') ? 'apps' : 'folders';
+const pinKey = v => kind(v) === 'sites' ? hostOf(v) : kind(v) === 'apps' ? v : v.replace(/^~/, home);
 
 // Folder icon as Files shows it (Downloads, Pictures, … get their own).
 const folderIcon = path => {
@@ -71,6 +79,8 @@ class Indicator extends PanelMenu.Button {
     onRefresh(cb) { this._refreshItem.connect('activate', cb); }
     setRefreshText(text) { this._refreshItem.label.set_text(text); }
     onRemove(cb) { this._removeCb = cb; }
+    onLike(cb) { this._likeCb = cb; }
+    onReorder(cb) { this._reorderCb = cb; }
     onRestore(cb) { this._restoreItem.connect('activate', cb); }
     setRemovedCount(n) {
         this._restoreItem.visible = n > 0;
@@ -81,10 +91,15 @@ class Indicator extends PanelMenu.Button {
         this._grid.destroy_all_children();
         for (const {title, items} of sections) {
             if (!items.length) continue;
+            const section = {items, tiles: []};
             this._grid.add_child(new St.Label({text: title, style_class: 'shortcuts-heading'}));
             for (let i = 0; i < items.length; i += columns) {
                 const row = new St.BoxLayout({style_class: 'shortcuts-row'});
-                for (const it of items.slice(i, i + columns)) row.add_child(this._tile(it));
+                for (const it of items.slice(i, i + columns)) {
+                    const tile = this._tile(it, section);
+                    section.tiles.push(tile);
+                    row.add_child(tile);
+                }
                 this._grid.add_child(row);
             }
         }
@@ -92,7 +107,7 @@ class Indicator extends PanelMenu.Button {
             this._grid.add_child(new St.Label({text: 'Nothing in your history yet', style_class: 'shortcuts-sub'}));
     }
 
-    _tile(it) {
+    _tile(it, section) {
         const content = vbox({x_align: Clutter.ActorAlign.CENTER});
         let icon;
         if (it.gicon) {
@@ -142,11 +157,103 @@ class Indicator extends PanelMenu.Button {
             // re-render from an idle: this button is destroyed by it
             GLib.idle_add(GLib.PRIORITY_DEFAULT, () => { this._removeCb?.(it.key); return GLib.SOURCE_REMOVE; });
         });
+
+        // heart in the other corner: liked tiles stay at the front, in the order you drag them to
+        const like = new St.Button({
+            child: new St.Icon({icon_name: 'emblem-favorite-symbolic', icon_size: 10}),
+            style_class: `shortcuts-like${it.liked ? ' shortcuts-liked' : ''}`,
+            opacity: it.liked ? 255 : 0, can_focus: false, track_hover: true,
+            x_align: Clutter.ActorAlign.START, y_align: Clutter.ActorAlign.START, x_expand: true, y_expand: true,
+        });
+        like.connect('clicked', () => {
+            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => { this._likeCb?.(it); return GLib.SOURCE_REMOVE; });
+        });
+
         const tile = new St.Widget({layout_manager: new Clutter.BinLayout(), reactive: true, track_hover: true});
         tile.add_child(btn);
         tile.add_child(remove);
-        tile.connect('notify::hover', () => remove.ease({opacity: tile.hover ? 255 : 0, duration: 120}));
+        tile.add_child(like);
+        tile.connect('notify::hover', () => {
+            if (this._dragging) return;
+            remove.ease({opacity: tile.hover ? 255 : 0, duration: 120});
+            like.ease({opacity: tile.hover || it.liked ? 255 : 0, duration: 120});
+        });
+
+        // press and move a few pixels: drag the tile instead of clicking it
+        let press = null;
+        btn.connect('button-press-event', (_a, ev) => {
+            press = ev.get_button() === Clutter.BUTTON_PRIMARY ? ev.get_coords() : null;
+            return Clutter.EVENT_PROPAGATE;
+        });
+        btn.connect('motion-event', (_a, ev) => {
+            if (!press || this._dragging) return Clutter.EVENT_PROPAGATE;
+            if (!(ev.get_state() & Clutter.ModifierType.BUTTON1_MASK)) {
+                press = null;
+                return Clutter.EVENT_PROPAGATE;
+            }
+            const [x, y] = ev.get_coords();
+            if (Math.hypot(x - press[0], y - press[1]) < DRAG_THRESHOLD) return Clutter.EVENT_PROPAGATE;
+            const start = press;
+            press = null;
+            this._drag(tile, btn, it, section, start);
+            return Clutter.EVENT_STOP;
+        });
         return tile;
+    }
+
+    _drag(tile, btn, it, section, [sx, sy]) {
+        btn.fake_release();   // no click when the drag ends
+        this._dragging = true;
+        // a copy follows the pointer above the menu; the tile stays behind as a faded placeholder
+        const [ox, oy] = tile.get_transformed_position();
+        const ghost = new Clutter.Clone({source: tile, x: ox, y: oy, reactive: false});
+        Main.uiGroup.add_child(ghost);
+        tile.opacity = 70;
+        const grab = global.stage.grab(tile);
+        let target = null;
+        const over = (x, y) => section.tiles.find(t => {
+            if (t === tile) return false;
+            const [tx, ty] = t.get_transformed_position();
+            const [w, h] = t.get_transformed_size();
+            return x >= tx && x < tx + w && y >= ty && y < ty + h;
+        }) ?? null;
+        const motion = tile.connect('motion-event', (_a, ev) => {
+            const [x, y] = ev.get_coords();
+            ghost.set_position(ox + x - sx, oy + y - sy);
+            const t = over(x, y);
+            if (t !== target) {
+                target?.remove_style_class_name('shortcuts-drop');
+                target = t;
+                target?.add_style_class_name('shortcuts-drop');
+            }
+            return Clutter.EVENT_STOP;
+        });
+        let done = false;
+        const finish = () => {
+            if (done) return false;
+            done = true;
+            grab.dismiss();
+            ghost.destroy();
+            this._dragging = false;
+            return true;
+        };
+        // the board can be rebuilt mid-drag (history refresh): drop the ghost and the grab with it
+        tile.connect('destroy', finish);
+        const release = tile.connect('button-release-event', () => {
+            tile.disconnect(motion);
+            tile.disconnect(release);
+            if (!finish()) return Clutter.EVENT_STOP;
+            target?.remove_style_class_name('shortcuts-drop');
+            tile.opacity = 255;
+            const to = target ? section.tiles.indexOf(target) : -1;
+            if (to >= 0) {
+                GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                    this._reorderCb?.(section.items, it, to);
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+            return Clutter.EVENT_STOP;
+        });
     }
 });
 
@@ -161,6 +268,8 @@ export default class ShortcutsExtension extends Extension {
         this._indicator.onOpen(() => this._maybeRefresh());
         this._indicator.onRefresh(() => this._collect());
         this._indicator.onRemove(key => this._remove(key));
+        this._indicator.onLike(it => this._like(it));
+        this._indicator.onReorder((items, it, to) => this._reorder(items, it, to));
         this._indicator.onRestore(() => this._settings.set_strv('hidden', []));
         Main.panel.addToStatusArea(this.uuid, this._indicator);
         this._data = readJson(CACHE_PATH);
@@ -180,8 +289,35 @@ export default class ShortcutsExtension extends Extension {
 
     // the settings 'changed' handler re-renders, and re-ranks if the cache runs out of entries
     _remove(key) {
+        if (!key) return;
+        const pinned = this._settings.get_strv('pinned');
+        if (pinned.some(v => pinKey(v) === key)) this._settings.set_strv('pinned', pinned.filter(v => pinKey(v) !== key));
         const hidden = this._settings.get_strv('hidden');
-        if (key && !hidden.includes(key)) this._settings.set_strv('hidden', [...hidden, key]);
+        if (!hidden.includes(key)) this._settings.set_strv('hidden', [...hidden, key]);
+    }
+
+    _like(it) {
+        const pinned = this._settings.get_strv('pinned');
+        this._settings.set_strv('pinned', it.liked
+            ? pinned.filter(v => pinKey(v) !== it.key)
+            : [...pinned, it.pinValue]);
+    }
+
+    // Dropping a tile on another moves it there and likes it, so the order sticks. Only liked
+    // tiles keep a place of their own; dropped among the history ranking, it becomes the last liked.
+    _reorder(items, it, to) {
+        const order = items.filter(i => i.key !== it.key);
+        order.splice(to, 0, it);
+        const liked = order.filter(i => i.liked || i === it);
+        const likedKeys = new Set(liked.map(i => i.key));
+        const k = kind(it.pinValue);
+        const pinned = this._settings.get_strv('pinned');
+        this._settings.set_strv('pinned', [
+            ...pinned.filter(v => kind(v) !== k),
+            ...liked.map(i => pinned.find(v => pinKey(v) === i.key) ?? i.pinValue),
+            // liked entries past the end of the board keep their place after these
+            ...pinned.filter(v => kind(v) === k && !likedKeys.has(pinKey(v))),
+        ]);
     }
 
     _migrate() {
@@ -251,38 +387,52 @@ export default class ShortcutsExtension extends Extension {
     _render() {
         if (!this._indicator) return;
         const cfg = this._cfg;
-        const {hide, pin, columns} = cfg;
-        const hidden = new Set(hide.map(h => h.replace(/^~/, home)));
-        this._indicator.setRemovedCount(hide.length);
-        const pinnedSites = pin.filter(p => /^https?:/.test(p)).map(url => {
-            const host = GLib.Uri.parse(url, GLib.UriFlags.NONE).get_host().replace(/^www\./, '');
-            return {title: host, sub: host, uri: url, key: host};
-        }).filter(p => !hidden.has(p.key));
-        const pinnedPlaces = pin.filter(p => !/^https?:/.test(p)).map(p => p.replace(/^~/, home)).filter(p => !hidden.has(p));
-        const sites = [...pinnedSites, ...(this._data?.sites ?? [])
-            .filter(s => !hidden.has(s.host) && !pinnedSites.some(p => p.sub === s.host))
-            .map(s => ({
-                title: s.title, sub: s.host, uri: s.url, key: s.host,
-                gicon: s.icon && GLib.file_test(s.icon, GLib.FileTest.EXISTS)
-                    ? new Gio.FileIcon({file: Gio.File.new_for_path(s.icon)}) : null,
-            }))].slice(0, cfg.sites);
-        const places = [...pinnedPlaces, ...(this._data?.places ?? []).map(p => p.path)
-            .filter(p => !hidden.has(p) && !pinnedPlaces.includes(p))]
-            .filter(p => GLib.file_test(p, GLib.FileTest.IS_DIR))
-            .slice(0, cfg.folders)
-            .map(p => ({
-                title: GLib.path_get_basename(p), sub: tildify(GLib.path_get_dirname(p)),
-                uri: Gio.File.new_for_path(p).get_uri(), gicon: folderIcon(p), key: p,
-            }));
+        const hidden = new Set(cfg.hide.map(h => h.replace(/^~/, home)));
+        this._indicator.setRemovedCount(cfg.hide.length);
+        const liked = k => cfg.pin.filter(v => kind(v) === k && !hidden.has(pinKey(v)));
+        const fill = (likedItems, ranked, n) => {
+            const keys = new Set(likedItems.map(i => i.key));
+            return [...likedItems.map(i => ({...i, liked: true})),
+                ...ranked.filter(i => !hidden.has(i.key) && !keys.has(i.key))].slice(0, n);
+        };
+
+        const history = new Map((this._data?.sites ?? []).map(s => [s.host, s]));
+        const site = (host, url) => {
+            const h = history.get(host);
+            return {
+                title: h?.title ?? host, sub: host, uri: url, key: host, pinValue: url,
+                gicon: h?.icon && GLib.file_test(h.icon, GLib.FileTest.EXISTS)
+                    ? new Gio.FileIcon({file: Gio.File.new_for_path(h.icon)}) : null,
+            };
+        };
+        const sites = fill(
+            liked('sites').map(url => site(hostOf(url), url)),
+            (this._data?.sites ?? []).map(s => site(s.host, s.url)),
+            cfg.sites);
+
         // the same usage ranking GNOME keeps for its "Frequent" apps view
-        const apps = Shell.AppUsage.get_default().get_most_used()
-            .filter(app => !hidden.has(app.get_id()) && app.get_app_info()?.should_show() !== false)
-            .slice(0, cfg.apps)
-            .map(app => ({title: app.get_name(), sub: '', gicon: app.get_icon(), app, key: app.get_id()}));
+        const appItem = app => ({title: app.get_name(), sub: '', gicon: app.get_icon(), app, key: app.get_id(), pinValue: app.get_id()});
+        const appSys = Shell.AppSystem.get_default();
+        const apps = fill(
+            liked('apps').map(id => appSys.lookup_app(id)).filter(Boolean).map(appItem),
+            Shell.AppUsage.get_default().get_most_used()
+                .filter(app => app.get_app_info()?.should_show() !== false).map(appItem),
+            cfg.apps);
+
+        const folder = p => ({
+            title: GLib.path_get_basename(p), sub: tildify(GLib.path_get_dirname(p)),
+            uri: Gio.File.new_for_path(p).get_uri(), gicon: folderIcon(p), key: p, pinValue: tildify(p),
+        });
+        const isDir = p => GLib.file_test(p, GLib.FileTest.IS_DIR);
+        const places = fill(
+            liked('folders').map(pinKey).filter(isDir).map(folder),
+            (this._data?.places ?? []).map(p => p.path).filter(isDir).map(folder),
+            cfg.folders);
+
         this._indicator.render([
             {title: 'Websites', items: sites},
             {title: 'Apps', items: apps},
             {title: 'Folders', items: places},
-        ], columns);
+        ], cfg.columns);
     }
 }

@@ -24,3 +24,7 @@
 #panel .shortcuts-button:checked:hover .shortcuts-chip { background-color: rgba(255, 255, 255, 0.32); }
 .shortcuts-remove { border-radius: 999px; padding: 3px; margin: 3px; background-color: rgba(0, 0, 0, 0.55); color: #ddd; }
 .shortcuts-remove:hover { background-color: #c01c28; color: white; }
+.shortcuts-like { border-radius: 999px; padding: 3px; margin: 3px; background-color: rgba(0, 0, 0, 0.55); color: #ddd; }
+.shortcuts-like:hover { color: #ff7b9c; }
+.shortcuts-like.shortcuts-liked { color: #ff5c8a; }
+.shortcuts-drop .shortcuts-tile { background-color: rgba(53, 132, 228, 0.35); }
