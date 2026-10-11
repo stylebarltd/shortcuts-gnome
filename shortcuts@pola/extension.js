@@ -3,6 +3,7 @@ import Gio from 'gi://Gio';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
+import Shell from 'gi://Shell';
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -12,7 +13,9 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 const CONFIG_PATH = GLib.build_filenamev([GLib.get_user_config_dir(), 'shortcuts-gnome', 'config.json']);
 const CACHE_PATH = GLib.build_filenamev([GLib.get_user_cache_dir(), 'shortcuts-gnome', 'top.json']);
 const DEFAULTS = {
-    count: 10,               // websites and folders each
+    sites: 15,               // how many tiles per section
+    apps: 5,
+    folders: 5,
     columns: 5,
     refreshMinutes: 60,      // re-rank history at most this often (checked when the menu opens)
     hide: [],                // hosts ("facebook.com") or folder paths to leave out
@@ -102,9 +105,11 @@ class Indicator extends PanelMenu.Button {
         const name = new St.Label({text: it.title, style_class: 'shortcuts-name', x_align: Clutter.ActorAlign.CENTER});
         name.clutter_text.ellipsize = 3;   // Pango.EllipsizeMode.END
         content.add_child(name);
-        const sub = new St.Label({text: it.sub, style_class: 'shortcuts-sub', x_align: Clutter.ActorAlign.CENTER});
-        sub.clutter_text.ellipsize = 2;    // MIDDLE: keeps both ends of a path or host
-        content.add_child(sub);
+        if (it.sub) {
+            const sub = new St.Label({text: it.sub, style_class: 'shortcuts-sub', x_align: Clutter.ActorAlign.CENTER});
+            sub.clutter_text.ellipsize = 2;    // MIDDLE: keeps both ends of a path or host
+            content.add_child(sub);
+        }
 
         const btn = new St.Button({
             child: content, style_class: 'shortcuts-tile', style: `width: ${TILE}px;`,
@@ -112,6 +117,10 @@ class Indicator extends PanelMenu.Button {
         });
         btn.connect('clicked', () => {
             this.menu.close();
+            if (it.app) {
+                it.app.activate();   // focuses the app if it is already open
+                return;
+            }
             try {
                 Gio.AppInfo.launch_default_for_uri(it.uri, global.create_app_launch_context(0, -1));
             } catch (e) {
@@ -155,7 +164,8 @@ export default class ShortcutsExtension extends Extension {
         try {
             const proc = new Gio.Subprocess({
                 // ask for a few more than shown so hidden entries can be skipped
-                argv: ['python3', GLib.build_filenamev([this.path, 'collect.py']), String(this._cfg.count + this._cfg.hide.length + 5)],
+                argv: ['python3', GLib.build_filenamev([this.path, 'collect.py']),
+                    String(Math.max(this._cfg.sites, this._cfg.folders) + this._cfg.hide.length + 5)],
                 flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE,
             });
             proc.init(null);
@@ -176,7 +186,7 @@ export default class ShortcutsExtension extends Extension {
 
     _render() {
         if (!this._indicator) return;
-        const {count, hide, pin, columns} = this._cfg;
+        const {hide, pin, columns} = this._cfg;
         const hidden = new Set(hide.map(h => h.replace(/^~/, home)));
         const pinnedSites = pin.filter(p => /^https?:/.test(p)).map(url => {
             const host = GLib.Uri.parse(url, GLib.UriFlags.NONE).get_host().replace(/^www\./, '');
@@ -189,15 +199,24 @@ export default class ShortcutsExtension extends Extension {
                 title: s.title, sub: s.host, uri: s.url,
                 gicon: s.icon && GLib.file_test(s.icon, GLib.FileTest.EXISTS)
                     ? new Gio.FileIcon({file: Gio.File.new_for_path(s.icon)}) : null,
-            }))].slice(0, count);
+            }))].slice(0, this._cfg.sites);
         const places = [...pinnedPlaces, ...(this._data?.places ?? []).map(p => p.path)
             .filter(p => !hidden.has(p) && !pinnedPlaces.includes(p))]
             .filter(p => GLib.file_test(p, GLib.FileTest.IS_DIR))
-            .slice(0, count)
+            .slice(0, this._cfg.folders)
             .map(p => ({
                 title: GLib.path_get_basename(p), sub: tildify(GLib.path_get_dirname(p)),
                 uri: Gio.File.new_for_path(p).get_uri(), gicon: folderIcon(p),
             }));
-        this._indicator.render([{title: 'Websites', items: sites}, {title: 'Folders', items: places}], columns);
+        // the same usage ranking GNOME keeps for its "Frequent" apps view
+        const apps = Shell.AppUsage.get_default().get_most_used()
+            .filter(app => !hidden.has(app.get_id()) && app.get_app_info()?.should_show() !== false)
+            .slice(0, this._cfg.apps)
+            .map(app => ({title: app.get_name(), sub: '', gicon: app.get_icon(), app}));
+        this._indicator.render([
+            {title: 'Websites', items: sites},
+            {title: 'Apps', items: apps},
+            {title: 'Folders', items: places},
+        ], columns);
     }
 }
