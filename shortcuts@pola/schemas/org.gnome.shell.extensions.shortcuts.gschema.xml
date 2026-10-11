@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.shortcuts" path="/org/gnome/shell/extensions/shortcuts/">
+    <key name="sites" type="i">
+      <default>20</default>
+      <range min="0" max="60"/>
+      <summary>Number of website tiles</summary>
+    </key>
+    <key name="apps" type="i">
+      <default>15</default>
+      <range min="0" max="60"/>
+      <summary>Number of app tiles</summary>
+    </key>
+    <key name="folders" type="i">
+      <default>10</default>
+      <range min="0" max="60"/>
+      <summary>Number of folder tiles</summary>
+    </key>
+    <key name="columns" type="i">
+      <default>5</default>
+      <range min="2" max="10"/>
+      <summary>Tiles per row</summary>
+    </key>
+    <key name="refresh-minutes" type="i">
+      <default>60</default>
+      <range min="5" max="1440"/>
+      <summary>Re-rank history at most this often (checked when the board opens)</summary>
+    </key>
+    <key name="pinned" type="as">
+      <default>[]</default>
+      <summary>Websites (https://…) or folders shown first</summary>
+    </key>
+    <key name="hidden" type="as">
+      <default>[]</default>
+      <summary>Removed tiles: hosts, app ids or folder paths</summary>
+    </key>
+  </schema>
+</schemalist>

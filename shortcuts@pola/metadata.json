@@ -2,6 +2,13 @@
   "uuid": "shortcuts@pola",
   "name": "Shortcuts",
   "description": "A top-bar board of your most visited websites and most used folders, ranked from browser history and recent files.",
-  "shell-version": ["46", "47", "48", "49", "50"],
-  "version": 1
+  "shell-version": [
+    "46",
+    "47",
+    "48",
+    "49",
+    "50"
+  ],
+  "version": 1,
+  "settings-schema": "org.gnome.shell.extensions.shortcuts"
 }
