@@ -290,7 +290,7 @@ export default class ShortcutsExtension extends Extension {
         this._indicator.onLike(it => this._like(it));
         this._indicator.onReorder((items, it, to) => this._reorder(items, it, to));
         this._indicator.onRestore(() => this._settings.set_strv('hidden', []));
-        Main.panel.addToStatusArea(this.uuid, this._indicator);
+        Main.panel.addToStatusArea(this.uuid, this._indicator, -1, 'left'); // left side of the top bar, after Activities
         this._data = readJson(CACHE_PATH);
         this._render();
         this._maybeRefresh();
